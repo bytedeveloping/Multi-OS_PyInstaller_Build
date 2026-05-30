@@ -181,6 +181,6 @@ pyinstaller --onefile --icon=myicon.ico --hidden-import=my.module {{file_path}}
 
 ## 📄 License
 
-This project is licensed under the (**MIT License**)[https://github.com/bytedeveloping/Multi-OS_PyInstaller_Build?tab=MIT-1-ov-file].
+This project is licensed under the [**MIT License**.](https://github.com/bytedeveloping/Multi-OS_PyInstaller_Build?tab=MIT-1-ov-file)
 
 
