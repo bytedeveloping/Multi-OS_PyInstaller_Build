@@ -1,0 +1,91 @@
+name: 'PyInstaller Matrix Builder'
+description: 'Compiles Python scripts into standalone executables for Windows, macOS, and Linux.'
+author: 'YourNameOrOrg'
+branding:
+  icon: 'package'
+  color: 'blue'
+
+inputs:
+  file_path:
+    description: 'Path to the Python file you want to build'
+    required: true
+    default: 'main.py'
+  upload_destination:
+    description: 'Where should the finished binary go? (actions-artifact or commit-to-repo-folder)'
+    required: true
+    default: 'actions-artifact'
+  repo_folder_path:
+    description: 'If committing to repo, type folder path (Do NOT use dist/)'
+    required: false
+    default: 'builds/'
+
+runs:
+  using: 'composite'
+  steps:
+    - name: Set up Python
+      uses: actions/setup-python@v5
+      with:
+        python-version: '3.11'
+        cache: 'pip'
+
+    - name: Install Dependencies & PyInstaller
+      run: |
+        python -m pip install --upgrade pip
+        pip install pyinstaller
+        if [ -f requirements.txt ]; then pip install -r requirements.txt; fi
+      shell: bash
+
+    - name: Run PyInstaller on Selected File
+      shell: bash
+      run: |
+        RAW_NAME=$(basename "${{ inputs.file_path }}" | cut -f 1 -d '.')
+        
+        # Detect OS automatically in composite action
+        if [[ "$RUNNER_OS" == "Windows" ]]; then
+          pyinstaller --onefile --name "${RAW_NAME}.exe" "${{ inputs.file_path }}"
+        elif [[ "$RUNNER_OS" == "macOS" ]]; then
+          pyinstaller --onefile --windowed --name "${RAW_NAME}" "${{ inputs.file_path }}"
+          cd dist
+          zip -r "${RAW_NAME}.app.zip" "${RAW_NAME}.app"
+          rm -rf "${RAW_NAME}.app"
+          cd ..
+        else
+          pyinstaller --onefile --name "${RAW_NAME}.bin" "${{ inputs.file_path }}"
+        fi
+
+    - name: Upload Finished Binary Artifact
+      if: ${{ inputs.upload_destination == 'actions-artifact' }}
+      uses: actions/upload-artifact@v4
+      with:
+        name: binary-${{ runner.os }}
+        path: dist/
+
+    - name: Commit Binary Directly to Repo Folder
+      if: ${{ inputs.upload_destination == 'commit-to-repo-folder' }}
+      shell: bash
+      run: |
+        TARGET_DIR="${{ inputs.repo_folder_path }}"
+        if [ "$TARGET_DIR" = "dist" ] || [ "$TARGET_DIR" = "dist/" ] || [ "$TARGET_DIR" = "./dist/" ]; then
+          echo "Error: Target directory cannot be the temporary build directory (dist/)."
+          exit 1
+        fi
+        
+        git config --global user.name "github-actions[bot]"
+        git config --global user.email "github-actions[bot]@://github.com"
+        
+        mkdir -p "$TARGET_DIR"
+        cp -R dist/* "$TARGET_DIR/"
+        git add "$TARGET_DIR"
+        
+        git commit -m "Automated PyInstaller build for $RUNNER_OS [skip ci]" || echo "No changes to commit"
+        
+        for i in {1..5}; do
+          echo "Attempting to push changes (Try $i of 5)..."
+          git pull origin HEAD --rebase
+          if git push origin HEAD; then
+            echo "Push successful!"
+            exit 0
+          fi
+          sleep 5
+        done
+        exit 1
